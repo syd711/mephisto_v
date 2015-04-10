@@ -37,17 +37,13 @@ int SETTINGS_MODE = 0;
 //setup variables
 int alarmEnabled = 0;
 int alarmHour = 0;
-int alarmMinutes = 0;
+int alarmMinutes = 1;
 
 int timeHour = 0;
 int timeMinutes = 0;
 int timeSeconds = 0;
 
-int dateDay = 1;
-int dateMonth = 1;
-int dateYear = 15;
-
-int SETTINGS_DEFAULTS[] = {alarmHour, alarmMinutes, 0, timeHour, timeMinutes, dateDay, dateMonth, dateYear};
+int SETTINGS_DEFAULTS[] = {alarmHour, alarmMinutes, 0, timeHour, timeMinutes};
 
 //mp3 player state
 int alarmRunning = 0;
@@ -69,9 +65,7 @@ void setup()
   //random seed
   randomSeed(analogRead(0));
   
-  mp3_set_volume (volume); 
-  
-  setTime(timeHour,timeMinutes,0,dateDay,dateMonth,dateYear); 
+  setTime(timeHour,timeMinutes,0,0,0,0); 
   
   //rotary encoder
   pinMode(encoderPin2, INPUT); 
@@ -118,6 +112,8 @@ void setup()
   lcd.print("Wecker an:       [ ]");
   
   encoderValue = volume;
+  
+  setVolume(volume); 
 }
 
 void loop()
@@ -156,7 +152,7 @@ void loop()
  * be applied as current volume value.
  */
 void checkVolume() {
-  if(playing == 1 && SETTINGS_MODE <= 0) {
+  if(SETTINGS_MODE <= 0) {
     //reset rotary encoder value
     if(encoderValue < 0 || encoderValue > 30) {
       encoderValue = volume; //apply initial volume
@@ -164,9 +160,11 @@ void checkVolume() {
     
     //apply only changed volume
     if(encoderValue != volume) {
+      Serial.println("Stopping volume timer");
+      Serial.println(encoderValue);
+      Serial.println(volume);      
       volumeTimer.stop(0);
-      volume = encoderValue;
-      mp3_set_volume(volume);
+      setVolume(encoderValue);
     }    
   }
 }
@@ -178,9 +176,11 @@ void checkVolume() {
 void checkAlarm() {
   if(alarmEnabled == 1 && alarmRunning == 0 && playing == 0) {
     if(alarmHour == timeHour && alarmMinutes == timeMinutes && timeSeconds == 0) {
+      digitalWrite(LCD_LIGHT_PIN, 1);
       alarmRunning = 1;
       playing = 1;
       volume = 1;
+      encoderValue = 1;
       mp3_set_volume(volume);
       delay(1000);
       playNext();
@@ -199,12 +199,13 @@ void checkAlarm() {
 void increaseVolume() {
   //stop at the volume level 15
   if(volume == 15) {
+    Serial.println("Stopping timer");
     volumeTimer.stop(0);
   }
   else {
     volume++;
     encoderValue = volume;
-    mp3_set_volume (volume); 
+    setVolume(volume); 
   }
 }
 
@@ -218,7 +219,7 @@ void checkSettingsSwitch() {
     encoderValue = SETTINGS_DEFAULTS[SETTINGS_MODE];
     SETTINGS_MODE++;
     //swtich back to regular mode
-    if(SETTINGS_MODE > 8) {
+    if(SETTINGS_MODE > 5) {
       SETTINGS_MODE = 0;
       encoderValue = volume;
       lcd.noCursor();
@@ -248,21 +249,13 @@ void checkSettingsMode() {
   else if(SETTINGS_MODE == 5) {
     updateValue(15, 2, 0, 59, timeMinutes, 1);
   }
-  else if(SETTINGS_MODE == 6) {
-    updateValue(10, 3, 1, 31, dateDay, 1);
-  }
-  else if(SETTINGS_MODE == 7) {
-    updateValue(13, 3, 1, 12, dateMonth, 1);
-  }  
-  else if(SETTINGS_MODE == 8) {
-    updateValue(16, 3, 2015, 2100, dateYear, 1);
-  }  
 }
 
 /**
  * Stops the playback.
  */
 void stopPlaying() {
+  digitalWrite(LCD_LIGHT_PIN, 0);
   alarmRunning = 0;
   playing = 0;
   mp3_stop();
@@ -371,7 +364,7 @@ void updateValue(int col, int row, int minValue, int maxValue, int &value, int u
   }
 
   if(updateTime == 1) {
-    setTime(timeHour,timeMinutes,second(),dateDay,dateMonth,dateYear);
+    setTime(timeHour,timeMinutes,second(),0, 0, 0);
   }
 }
 
@@ -391,13 +384,25 @@ void refreshUI() // definieren Subroutine
    timeSeconds = second();
    printNumber(timeSeconds);
 
-   lcd.setCursor(0, 3); 
-   lcd.print("Datum:    ");
-   printNumber(day()); 
-   lcd.print("."); 
-   printNumber(month());
-   lcd.print("."); 
-   printNumber(year());
+   refreshVolume();
+}
+
+/**
+ * Only updates the volume section
+ */
+void refreshVolume() {
+  lcd.setCursor(0, 3); 
+  lcd.print("Volume: [");
+  int blocks = volume/3;
+  for(int i=1; i<=10; i++) {
+    if(i <= blocks) {
+      lcd.print(char(255));
+    }
+    else {
+      lcd.print(" ");
+    }
+  }
+  lcd.print("]");
 }
 
 /**
@@ -410,6 +415,17 @@ void printNumber(int number)
      lcd.print("0");  
    }
    lcd.print(number); 
+}
+
+/**
+ * Applies the volume to the mp3 player and updates the display.
+ */
+void setVolume(int vol) {
+  Serial.print("Volume: ");
+  Serial.println(volume);
+  volume = vol;
+  mp3_set_volume(vol);
+  refreshVolume();
 }
 
 /**
