@@ -6,13 +6,20 @@
 
 // initialize the library with the numbers of the interface pins
 LiquidCrystal lcd(7, 8, 9, 10, 11, 12);
+#define LCD_LIGHT_PIN A4
+
+const int TRACK_COUNT = 50;
+
+const int PUSH_BUTTON_DEBOUNCE = 150;
+const int ALARM_INCREASE_INTERVAL = 2500;
 
 // timer for display update
 Timer displayTimer;
+Timer volumeTimer;
 
 //rotary encoder stuff
-const int encoderPin1 = 2;
-const int encoderPin2 = 3;
+const int encoderPin1 = 3;
+const int encoderPin2 = 2;
 const int encoderSwitchPin = 4; //push button switch
 volatile int lastEncoded = 0;
 volatile long encoderValue = 0;
@@ -21,7 +28,7 @@ int lastMSB = 0;
 int lastLSB = 0;
 
 //push button switching the alarm
-const int alarmPin = 13;  
+const int ALARM_PIN = 13;  
 
 
 //global settings state, the value is incremented with each rotary push
@@ -34,6 +41,7 @@ int alarmMinutes = 0;
 
 int timeHour = 0;
 int timeMinutes = 0;
+int timeSeconds = 0;
 
 int dateDay = 1;
 int dateMonth = 1;
@@ -42,24 +50,42 @@ int dateYear = 15;
 int SETTINGS_DEFAULTS[] = {alarmHour, alarmMinutes, 0, timeHour, timeMinutes, dateDay, dateMonth, dateYear};
 
 //mp3 player state
-int playing = 0;
+int alarmRunning = 0;
 int volume = 5;
+
+//lcd display switch
+const int LCD_PIN = 5;
+int lcdEnabled = 1;
+
+//play button
+const int PLAY_PIN = 6;
+int playing = 0;
 
 void setup() 
 {
   Serial.begin(9600); 
   mp3_set_serial (Serial);    //set Serial for DFPlayer-mini mp3 module 
+  
+  //random seed
+  randomSeed(analogRead(0));
+  
   mp3_set_volume (volume); 
   
   setTime(timeHour,timeMinutes,0,dateDay,dateMonth,dateYear); 
   
   //rotary encoder
-  pinMode(encoderPin1, INPUT); 
-  pinMode(encoderPin2, INPUT);
+  pinMode(encoderPin2, INPUT); 
+  pinMode(encoderPin1, INPUT);
   pinMode(encoderSwitchPin, INPUT);//the push button of the rotary encoder
   
   //alarm on/off push button
-  pinMode(alarmPin, INPUT);     
+  pinMode(ALARM_PIN, INPUT);     
+  
+  //lcd toggle button
+  pinMode(LCD_PIN, INPUT);
+  
+  //play button
+  pinMode(PLAY_PIN, INPUT);
 
   digitalWrite(encoderPin1, HIGH); //turn pullup resistor on
   digitalWrite(encoderPin2, HIGH); //turn pullup resistor on
@@ -69,6 +95,11 @@ void setup()
   //on interrupt 0 (pin 2), or interrupt 1 (pin 3) 
   attachInterrupt(0, updateEncoder, CHANGE); 
   attachInterrupt(1, updateEncoder, CHANGE);
+  
+  // Set the LCD display backlight pin as an output.
+  pinMode(LCD_LIGHT_PIN, OUTPUT);
+  // Turn on the LCD backlight.
+  digitalWrite(LCD_LIGHT_PIN, HIGH);
   
   //timer init
   displayTimer.every(1000, refreshUI);
@@ -85,18 +116,12 @@ void setup()
    
   lcd.setCursor(0, 1); 
   lcd.print("Wecker an:       [ ]");
+  
+  encoderValue = volume;
 }
 
 void loop()
 {     
-  if(playing == 0) {
-    //set initial delay, waiting for the dfplayer to be ready
-    delay(3000);
-    mp3_playback_mode(0);
-    mp3_play ();   
-    playing = 1;
-  }
-  
   //check if alarm should be triggered
   checkAlarm();
   
@@ -108,6 +133,12 @@ void loop()
   
   //check if the alarm button is pressed
   checkAlarmButton();
+  
+  //check if the LCD  button is pressed
+  checkLcdButton();
+  
+  //check if the play button is pressed
+  checkPlayButton();
   
   //check if settigns are applied
   if(SETTINGS_MODE > 0) {
@@ -133,10 +164,9 @@ void checkVolume() {
     
     //apply only changed volume
     if(encoderValue != volume) {
+      volumeTimer.stop(0);
       volume = encoderValue;
       mp3_set_volume(volume);
-      Serial.print("Volume: ");
-      Serial.println(volume);
     }    
   }
 }
@@ -146,7 +176,35 @@ void checkVolume() {
  * matches the current time
  */
 void checkAlarm() {
-  if(alarmEnabled == 1) {
+  if(alarmEnabled == 1 && alarmRunning == 0 && playing == 0) {
+    if(alarmHour == timeHour && alarmMinutes == timeMinutes && timeSeconds == 0) {
+      alarmRunning = 1;
+      playing = 1;
+      volume = 1;
+      mp3_set_volume(volume);
+      delay(1000);
+      playNext();
+      volumeTimer.every(ALARM_INCREASE_INTERVAL, increaseVolume);
+    }
+  }
+  
+  if(alarmRunning) {
+    volumeTimer.update();
+  }
+}
+
+/**
+ * Increases the volume by the timer fired every n seconds.
+ */ 
+void increaseVolume() {
+  //stop at the volume level 15
+  if(volume == 15) {
+    volumeTimer.stop(0);
+  }
+  else {
+    volume++;
+    encoderValue = volume;
+    mp3_set_volume (volume); 
   }
 }
 
@@ -155,7 +213,7 @@ void checkAlarm() {
  * switch between the editing modes. 
  */
 void checkSettingsSwitch() {
-  if(!digitalRead(encoderSwitchPin)){
+  if(digitalRead(encoderSwitchPin)){
     lcd.cursor();
     encoderValue = SETTINGS_DEFAULTS[SETTINGS_MODE];
     SETTINGS_MODE++;
@@ -165,7 +223,7 @@ void checkSettingsSwitch() {
       encoderValue = volume;
       lcd.noCursor();
     }
-    delay(300); //debounce rotary push button
+    delay(PUSH_BUTTON_DEBOUNCE); //debounce rotary push button
   }    
 }
 
@@ -201,15 +259,79 @@ void checkSettingsMode() {
   }  
 }
 
+/**
+ * Stops the playback.
+ */
+void stopPlaying() {
+  alarmRunning = 0;
+  playing = 0;
+  mp3_stop();
+}
+
+/**
+ * Shuffle play
+ */
+void playNext() {
+  playing = 1;
+  // print a random number from 10 to 19
+  int randNumber = random(1, TRACK_COUNT+1);
+  mp3_play (randNumber); 
+}
+
+/**
+ * Handler for the LCD toggle button
+ */
+void checkLcdButton() {
+    // read the state of the pushbutton value:
+  int buttonState = digitalRead(LCD_PIN);
+  if (buttonState == HIGH) {    
+    delay(PUSH_BUTTON_DEBOUNCE);
+    buttonState = digitalRead(LCD_PIN);
+    if (buttonState == HIGH) {    
+      if(playing) {
+        stopPlaying();
+        return;
+      }
+      
+      lcdEnabled = lcdEnabled == 0 ? 1 : 0;
+      //toggle display light
+      digitalWrite(LCD_LIGHT_PIN, lcdEnabled);
+    }
+  }
+}
+
+/**
+ * Handler for the Alarm button
+ */
 void checkAlarmButton() {
     // read the state of the pushbutton value:
-  int buttonState = digitalRead(alarmPin);
+  int buttonState = digitalRead(ALARM_PIN);
   if (buttonState == HIGH) {    
-    delay(200);
-    buttonState = digitalRead(alarmPin);
-    if (buttonState == HIGH) {    
+    delay(PUSH_BUTTON_DEBOUNCE);
+    buttonState = digitalRead(ALARM_PIN);
+    if (buttonState == HIGH) {
+      if(playing) {
+        stopPlaying();
+        return;
+      }
+      
       alarmEnabled = alarmEnabled == 0 ? 1 : 0;
       updateAlarm(alarmEnabled);
+    }
+  }
+}
+
+/**
+ * Handler for the Alarm button
+ */
+void checkPlayButton() {
+    // read the state of the pushbutton value:
+  int buttonState = digitalRead(PLAY_PIN);
+  if (buttonState == HIGH) {    
+    delay(PUSH_BUTTON_DEBOUNCE);
+    buttonState = digitalRead(PLAY_PIN);
+    if (buttonState == HIGH) {
+      playNext();
     }
   }
 }
@@ -249,7 +371,7 @@ void updateValue(int col, int row, int minValue, int maxValue, int &value, int u
   }
 
   if(updateTime == 1) {
-    setTime(timeHour,timeMinutes,0,dateDay,dateMonth,dateYear);
+    setTime(timeHour,timeMinutes,second(),dateDay,dateMonth,dateYear);
   }
 }
 
@@ -260,11 +382,14 @@ void refreshUI() // definieren Subroutine
 {
    lcd.setCursor(0, 2);
    lcd.print("Uhrzeit:    ");
+   timeHour = hour();
    printNumber(hour()); 
    lcd.print(":"); 
+   timeMinutes = minute();
    printNumber(minute());
    lcd.print(":"); 
-   printNumber(second());
+   timeSeconds = second();
+   printNumber(timeSeconds);
 
    lcd.setCursor(0, 3); 
    lcd.print("Datum:    ");
