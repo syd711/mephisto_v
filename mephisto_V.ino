@@ -51,7 +51,6 @@ int volume = 5;
 
 //lcd display switch
 const int LCD_PIN = 5;
-int lcdEnabled = 1;
 
 //play button
 const int PLAY_PIN = 6;
@@ -102,13 +101,13 @@ void setup()
   lcd.begin(20, 4); // Display hat 16 Zeichen x 2 Zeilen,
  
   //set initial alarm state 
-  lcd.setCursor(0, 0); 
+  lcd.setCursor(0, 1); 
   lcd.print("Weckzeit:      ");
   printNumber(alarmHour); 
   lcd.print(":"); 
   printNumber(alarmMinutes);
    
-  lcd.setCursor(0, 1); 
+  lcd.setCursor(0, 2); 
   lcd.print("Wecker an:       [ ]");
   
   encoderValue = volume;
@@ -176,7 +175,7 @@ void checkVolume() {
 void checkAlarm() {
   if(alarmEnabled == 1 && alarmRunning == 0 && playing == 0) {
     if(alarmHour == timeHour && alarmMinutes == timeMinutes && timeSeconds == 0) {
-      digitalWrite(LCD_LIGHT_PIN, 1);
+      enableDisplay(1);
       alarmRunning = 1;
       playing = 1;
       volume = 1;
@@ -235,19 +234,19 @@ void checkSettingsSwitch() {
  */
 void checkSettingsMode() {
   if(SETTINGS_MODE == 1) {
-    updateValue(15, 0, 0, 23, alarmHour, 0);
+    updateValue(15, 1, 0, 23, alarmHour, 0);
   }
   else if(SETTINGS_MODE == 2) {
-    updateValue(18, 0, 0, 59, alarmMinutes, 0);
+    updateValue(18, 1, 0, 59, alarmMinutes, 0);
   }
   else if(SETTINGS_MODE == 3) {
     updateAlarm(encoderValue % 2);
   }
   else if(SETTINGS_MODE == 4) {
-    updateValue(12, 2, 0, 23, timeHour, 1);
+    updateValue(12, 3, 0, 23, timeHour, 1);
   }
   else if(SETTINGS_MODE == 5) {
-    updateValue(15, 2, 0, 59, timeMinutes, 1);
+    updateValue(15, 3, 0, 59, timeMinutes, 1);
   }
 }
 
@@ -255,7 +254,7 @@ void checkSettingsMode() {
  * Stops the playback.
  */
 void stopPlaying() {
-  digitalWrite(LCD_LIGHT_PIN, 0);
+  enableDisplay(0);
   alarmRunning = 0;
   playing = 0;
   mp3_stop();
@@ -286,11 +285,16 @@ void checkLcdButton() {
         return;
       }
       
-      lcdEnabled = lcdEnabled == 0 ? 1 : 0;
+      int lcdEnable = digitalRead(LCD_PIN);
+      lcdEnable = lcdEnable == 0 ? 1 : 0;
       //toggle display light
-      digitalWrite(LCD_LIGHT_PIN, lcdEnabled);
+      enableDisplay(lcdEnable);
     }
   }
+}
+
+void enableDisplay(int enable) {
+  digitalWrite(LCD_LIGHT_PIN, enable);
 }
 
 /**
@@ -303,6 +307,7 @@ void checkAlarmButton() {
     delay(PUSH_BUTTON_DEBOUNCE);
     buttonState = digitalRead(ALARM_PIN);
     if (buttonState == HIGH) {
+      enableDisplay(1);
       if(playing) {
         stopPlaying();
         return;
@@ -324,6 +329,7 @@ void checkPlayButton() {
     delay(PUSH_BUTTON_DEBOUNCE);
     buttonState = digitalRead(PLAY_PIN);
     if (buttonState == HIGH) {
+      enableDisplay(1);
       playNext();
     }
   }
@@ -333,7 +339,7 @@ void checkPlayButton() {
  * Updates the UI of the alarm, boolean setting
  */
 void updateAlarm(int enable) {
-  lcd.setCursor(18, 1);   
+  lcd.setCursor(18, 2);   
   if(enable != 0) {
     alarmEnabled = 1;
     lcd.print("x");
@@ -342,7 +348,7 @@ void updateAlarm(int enable) {
     alarmEnabled = 0;
     lcd.print(" ");
   }
-  lcd.setCursor(18, 1);   
+  lcd.setCursor(18, 2);   
 }
 
 /**
@@ -373,7 +379,7 @@ void updateValue(int col, int row, int minValue, int maxValue, int &value, int u
  */
 void refreshUI() // definieren Subroutine
 {
-   lcd.setCursor(0, 2);
+   lcd.setCursor(0, 3);
    lcd.print("Uhrzeit:    ");
    timeHour = hour();
    printNumber(hour()); 
@@ -383,15 +389,13 @@ void refreshUI() // definieren Subroutine
    lcd.print(":"); 
    timeSeconds = second();
    printNumber(timeSeconds);
-
-   refreshVolume();
 }
 
 /**
  * Only updates the volume section
  */
 void refreshVolume() {
-  lcd.setCursor(0, 3); 
+  lcd.setCursor(0, 0); 
   lcd.print("Volume: [");
   int blocks = volume/3;
   for(int i=1; i<=10; i++) {
@@ -421,6 +425,7 @@ void printNumber(int number)
  * Applies the volume to the mp3 player and updates the display.
  */
 void setVolume(int vol) {
+  enableDisplay(1);
   Serial.print("Volume: ");
   Serial.println(volume);
   volume = vol;
