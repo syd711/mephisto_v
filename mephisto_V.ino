@@ -10,7 +10,7 @@ LiquidCrystal lcd(7, 8, 9, 10, 11, 12);
 
 const int TRACK_COUNT = 50;
 
-const int PUSH_BUTTON_DEBOUNCE = 150;
+const int PUSH_BUTTON_DEBOUNCE = 200;
 const int ALARM_INCREASE_INTERVAL = 2500;
 
 // timer for display update
@@ -35,6 +35,7 @@ const int ALARM_PIN = 13;
 int SETTINGS_MODE = 0;
 
 //setup variables
+const int MAX_ALARM_VOLUME = 12;
 int alarmEnabled = 0;
 int alarmHour = 0;
 int alarmMinutes = 1;
@@ -51,6 +52,7 @@ int volume = 5;
 
 //lcd display switch
 const int LCD_PIN = 5;
+int lcdState = 1;
 
 //play button
 const int PLAY_PIN = 6;
@@ -197,7 +199,7 @@ void checkAlarm() {
  */ 
 void increaseVolume() {
   //stop at the volume level 15
-  if(volume == 15) {
+  if(volume == MAX_ALARM_VOLUME) {
     Serial.println("Stopping timer");
     volumeTimer.stop(0);
   }
@@ -217,14 +219,18 @@ void checkSettingsSwitch() {
     lcd.cursor();
     encoderValue = SETTINGS_DEFAULTS[SETTINGS_MODE];
     SETTINGS_MODE++;
-    //swtich back to regular mode
+    //switch back to regular mode
     if(SETTINGS_MODE > 5) {
-      SETTINGS_MODE = 0;
-      encoderValue = volume;
-      lcd.noCursor();
+      resetSettingsMode();
     }
     delay(PUSH_BUTTON_DEBOUNCE); //debounce rotary push button
   }    
+}
+
+void resetSettingsMode() {
+  SETTINGS_MODE = 0;
+  encoderValue = volume;
+  lcd.noCursor();  
 }
 
 /**
@@ -243,9 +249,11 @@ void checkSettingsMode() {
     updateAlarm(encoderValue % 2);
   }
   else if(SETTINGS_MODE == 4) {
+    timeHour = hour();
     updateValue(12, 3, 0, 23, timeHour, 1);
   }
   else if(SETTINGS_MODE == 5) {
+    timeMinutes = minute();
     updateValue(15, 3, 0, 59, timeMinutes, 1);
   }
 }
@@ -285,16 +293,24 @@ void checkLcdButton() {
         return;
       }
       
-      int lcdEnable = digitalRead(LCD_PIN);
-      lcdEnable = lcdEnable == 0 ? 1 : 0;
-      //toggle display light
-      enableDisplay(lcdEnable);
+      toggleDisplay();
     }
   }
 }
 
 void enableDisplay(int enable) {
-  digitalWrite(LCD_LIGHT_PIN, enable);
+  lcdState = enable;
+  if(lcdState == 1) {
+    digitalWrite(LCD_LIGHT_PIN, HIGH);
+  }
+  else {
+    digitalWrite(LCD_LIGHT_PIN, LOW);
+  }
+}
+
+void toggleDisplay() {
+  lcdState = lcdState == 0 ? 1 : 0;
+  enableDisplay(lcdState);
 }
 
 /**
