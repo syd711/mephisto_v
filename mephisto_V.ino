@@ -8,7 +8,7 @@
 LiquidCrystal lcd(7, 8, 9, 10, 11, 12);
 #define LCD_LIGHT_PIN A4
 
-const int TRACK_COUNT = 50;
+const int TRACK_COUNT = 2;
 
 const int PUSH_BUTTON_DEBOUNCE = 200;
 const int ALARM_INCREASE_INTERVAL = 2500;
@@ -56,7 +56,9 @@ int lcdState = 1;
 
 //play button
 const int PLAY_PIN = 6;
+#define PLAY_BUSY_PIN A5
 int playing = 0;
+int playIndex = -1;
 
 void setup() 
 {
@@ -136,6 +138,9 @@ void loop()
   
   //check if the play button is pressed
   checkPlayButton();
+  
+  //check if the playback is running
+  checkPlayState();
   
   //check if settigns are applied
   if(SETTINGS_MODE > 0) {
@@ -258,6 +263,20 @@ void checkSettingsMode() {
   }
 }
 
+void checkPlayState() {
+  if(playing) {
+    delay(20);
+    int playState = digitalRead(PLAY_BUSY_PIN);
+    //is not playing?
+    if(playState == 1) {
+      Serial.println("Playing next...");
+      playNext();
+      //give him some time to update the busy state
+      delay(200);
+    }    
+  }
+}
+
 /**
  * Stops the playback.
  */
@@ -265,6 +284,7 @@ void stopPlaying() {
   enableDisplay(0);
   alarmRunning = 0;
   playing = 0;
+  playIndex = -1;
   mp3_stop();
 }
 
@@ -273,9 +293,20 @@ void stopPlaying() {
  */
 void playNext() {
   playing = 1;
-  // print a random number from 10 to 19
-  int randNumber = random(1, TRACK_COUNT+1);
-  mp3_play (randNumber); 
+  if(playIndex == -1) {
+    // print a random number from 10 to 19
+    playIndex = random(1, TRACK_COUNT+1);
+  }
+  else {
+    playIndex++;
+  }
+
+  if(playIndex > TRACK_COUNT) {
+    playIndex = 1;
+  }
+  Serial.print("Playing .................");
+  Serial.println(playIndex);
+  mp3_play (playIndex); 
 }
 
 /**
