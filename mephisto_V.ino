@@ -8,10 +8,10 @@
 LiquidCrystal lcd(7, 8, 9, 10, 11, 12);
 #define LCD_LIGHT_PIN A4
 
-const int TRACK_COUNT = 2;
+const int TRACK_COUNT = 100;
 
 const int PUSH_BUTTON_DEBOUNCE = 200;
-const int ALARM_INCREASE_INTERVAL = 2500;
+const int ALARM_INCREASE_INTERVAL = 3000;
 
 // timer for display update
 Timer displayTimer;
@@ -35,7 +35,7 @@ const int ALARM_PIN = 13;
 int SETTINGS_MODE = 0;
 
 //setup variables
-const int MAX_ALARM_VOLUME = 12;
+const int MAX_ALARM_VOLUME = 10;
 int alarmEnabled = 0;
 int alarmHour = 0;
 int alarmMinutes = 1;
@@ -187,7 +187,7 @@ void checkAlarm() {
       playing = 1;
       volume = 1;
       encoderValue = 1;
-      mp3_set_volume(volume);
+      setVolume(volume); 
       delay(1000);
       playNext();
       volumeTimer.every(ALARM_INCREASE_INTERVAL, increaseVolume);
@@ -263,6 +263,30 @@ void checkSettingsMode() {
   }
 }
 
+
+/**
+ * Generic time and alarm update method
+ */
+void updateValue(int col, int row, int minValue, int maxValue, int &value, int updateTime) {
+  lcd.setCursor(col, row); 
+  if(encoderValue < minValue) {
+    encoderValue = minValue;    
+  }
+  if(encoderValue > maxValue) {
+    encoderValue = maxValue;
+  }
+  
+  if(value != encoderValue) {
+    value = encoderValue;
+    printNumber(encoderValue);
+    SETTINGS_DEFAULTS[SETTINGS_MODE-1] = encoderValue;
+  }
+
+  if(updateTime == 1) {
+    setTime(timeHour,timeMinutes,second(),0, 0, 0);
+  }
+}
+
 void checkPlayState() {
   if(playing) {
     delay(20);
@@ -281,11 +305,11 @@ void checkPlayState() {
  * Stops the playback.
  */
 void stopPlaying() {
-  enableDisplay(0);
   alarmRunning = 0;
   playing = 0;
   playIndex = -1;
   mp3_stop();
+  volumeTimer.stop(0);
 }
 
 /**
@@ -318,7 +342,8 @@ void checkLcdButton() {
   if (buttonState == HIGH) {    
     delay(PUSH_BUTTON_DEBOUNCE);
     buttonState = digitalRead(LCD_PIN);
-    if (buttonState == HIGH) {    
+    if (buttonState == HIGH) {  
+      resetSettingsMode();  
       if(playing) {
         stopPlaying();
         return;
@@ -355,9 +380,9 @@ void checkAlarmButton() {
     buttonState = digitalRead(ALARM_PIN);
     if (buttonState == HIGH) {
       enableDisplay(1);
+      resetSettingsMode();
       if(playing) {
         stopPlaying();
-        return;
       }
       
       alarmEnabled = alarmEnabled == 0 ? 1 : 0;
@@ -398,28 +423,6 @@ void updateAlarm(int enable) {
   lcd.setCursor(18, 2);   
 }
 
-/**
- * Generic time and alarm update method
- */
-void updateValue(int col, int row, int minValue, int maxValue, int &value, int updateTime) {
-  lcd.setCursor(col, row); 
-  if(encoderValue < minValue) {
-    encoderValue = minValue;    
-  }
-  if(encoderValue > maxValue) {
-    encoderValue = maxValue;
-  }
-  
-  if(value != encoderValue) {
-    value = encoderValue;
-    printNumber(encoderValue);
-    SETTINGS_DEFAULTS[SETTINGS_MODE-1] = encoderValue;
-  }
-
-  if(updateTime == 1) {
-    setTime(timeHour,timeMinutes,second(),0, 0, 0);
-  }
-}
 
 /**
  * The method is called by the time timer to update the UI
@@ -496,4 +499,11 @@ void updateEncoder(){
   if(sum == 1) encoderValue ++;//skip updates
 
   lastEncoded = encoded; //store this value for next time
+  
+  resetAlarmState();
 }          
+
+void resetAlarmState() {
+  volumeTimer.stop(0);
+  alarmRunning = 0;
+}
