@@ -221,6 +221,7 @@ void increaseVolume() {
  */
 void checkSettingsSwitch() {
   if(digitalRead(encoderSwitchPin)){
+    enableDisplay(1);
     lcd.cursor();
     encoderValue = SETTINGS_DEFAULTS[SETTINGS_MODE];
     SETTINGS_MODE++;
