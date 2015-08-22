@@ -10,7 +10,7 @@ LiquidCrystal lcd(7, 8, 9, 10, 11, 12);
 
 const int TRACK_COUNT = 100;
 
-const int PUSH_BUTTON_DEBOUNCE = 200;
+const int PUSH_BUTTON_DEBOUNCE = 160;
 const int ALARM_INCREASE_INTERVAL = 3000;
 
 // timer for display update
@@ -20,7 +20,7 @@ Timer volumeTimer;
 //rotary encoder stuff
 const int encoderPin1 = 3;
 const int encoderPin2 = 2;
-const int encoderSwitchPin = 4; //push button switch
+const int ENCODER_BUTTON_PIN = 4; //push button switch
 volatile int lastEncoded = 0;
 volatile long encoderValue = 0;
 long lastencoderValue = 0;
@@ -35,7 +35,7 @@ const int ALARM_PIN = 13;
 int SETTINGS_MODE = 0;
 
 //setup variables
-const int MAX_ALARM_VOLUME = 10;
+const int MAX_ALARM_VOLUME = 14;
 int alarmEnabled = 0;
 int alarmHour = 0;
 int alarmMinutes = 1;
@@ -73,7 +73,7 @@ void setup()
   //rotary encoder
   pinMode(encoderPin2, INPUT); 
   pinMode(encoderPin1, INPUT);
-  pinMode(encoderSwitchPin, INPUT);//the push button of the rotary encoder
+  pinMode(ENCODER_BUTTON_PIN, INPUT);//the push button of the rotary encoder
   
   //alarm on/off push button
   pinMode(ALARM_PIN, INPUT);     
@@ -86,7 +86,7 @@ void setup()
 
   digitalWrite(encoderPin1, HIGH); //turn pullup resistor on
   digitalWrite(encoderPin2, HIGH); //turn pullup resistor on
-  digitalWrite(encoderSwitchPin, HIGH); //turn pullup resistor on
+  digitalWrite(ENCODER_BUTTON_PIN, HIGH); //turn pullup resistor on
 
   //call updateEncoder() when any high/low changed seen
   //on interrupt 0 (pin 2), or interrupt 1 (pin 3) 
@@ -142,7 +142,7 @@ void loop()
   //check if the playback is running
   checkPlayState();
   
-  //check if settigns are applied
+  //check if settings are applied
   if(SETTINGS_MODE > 0) {
     checkSettingsMode();
   }
@@ -220,8 +220,20 @@ void increaseVolume() {
  * switch between the editing modes. 
  */
 void checkSettingsSwitch() {
-  if(digitalRead(encoderSwitchPin)){
-    enableDisplay(1);
+  if(digitalRead(ENCODER_BUTTON_PIN)){
+    delay(PUSH_BUTTON_DEBOUNCE);
+    if(digitalRead(ENCODER_BUTTON_PIN)) {
+      if(lcdState == 0) {
+      enableDisplay(1);
+      delay(PUSH_BUTTON_DEBOUNCE); //debounce rotary push button
+      return;
+    }    
+    if(playing) {
+      stopPlaying();
+      delay(PUSH_BUTTON_DEBOUNCE); //debounce rotary push button
+      return;
+    }
+    
     lcd.cursor();
     encoderValue = SETTINGS_DEFAULTS[SETTINGS_MODE];
     SETTINGS_MODE++;
@@ -230,13 +242,18 @@ void checkSettingsSwitch() {
       resetSettingsMode();
     }
     delay(PUSH_BUTTON_DEBOUNCE); //debounce rotary push button
+    }
   }    
 }
 
-void resetSettingsMode() {
-  SETTINGS_MODE = 0;
-  encoderValue = volume;
-  lcd.noCursor();  
+int resetSettingsMode() {
+  if(SETTINGS_MODE > 0) {
+    SETTINGS_MODE = 0;
+    encoderValue = volume;
+    lcd.noCursor();  
+    return 1;
+  }
+  return 0;  
 }
 
 /**
@@ -290,10 +307,8 @@ void updateValue(int col, int row, int minValue, int maxValue, int &value, int u
 
 void checkPlayState() {
   if(playing) {
-    delay(20);
-    int playState = digitalRead(PLAY_BUSY_PIN);
-    //is not playing?
-    if(playState == 1) {
+    delay(100);
+    if(digitalRead(PLAY_BUSY_PIN)) {
       Serial.println("Playing next...");
       playNext();
       //give him some time to update the busy state
@@ -329,8 +344,6 @@ void playNext() {
   if(playIndex > TRACK_COUNT) {
     playIndex = 1;
   }
-  Serial.print("Playing .................");
-  Serial.println(playIndex);
   mp3_play (playIndex); 
 }
 
@@ -338,13 +351,13 @@ void playNext() {
  * Handler for the LCD toggle button
  */
 void checkLcdButton() {
-    // read the state of the pushbutton value:
-  int buttonState = digitalRead(LCD_PIN);
-  if (buttonState == HIGH) {    
+  if (digitalRead(LCD_PIN)) {    
     delay(PUSH_BUTTON_DEBOUNCE);
-    buttonState = digitalRead(LCD_PIN);
-    if (buttonState == HIGH) {  
-      resetSettingsMode();  
+    if (digitalRead(LCD_PIN)) {  
+      if(resetSettingsMode() == 1) {
+        delay(PUSH_BUTTON_DEBOUNCE);
+        return;
+      }
       if(playing) {
         stopPlaying();
         return;
@@ -374,14 +387,19 @@ void toggleDisplay() {
  * Handler for the Alarm button
  */
 void checkAlarmButton() {
-    // read the state of the pushbutton value:
-  int buttonState = digitalRead(ALARM_PIN);
-  if (buttonState == HIGH) {    
+  if (digitalRead(ALARM_PIN)) {    
     delay(PUSH_BUTTON_DEBOUNCE);
-    buttonState = digitalRead(ALARM_PIN);
-    if (buttonState == HIGH) {
-      enableDisplay(1);
-      resetSettingsMode();
+    if (digitalRead(ALARM_PIN)) {
+      if(lcdState == 0) {
+        enableDisplay(1);
+        delay(PUSH_BUTTON_DEBOUNCE);
+        return;
+      }
+      
+      if(resetSettingsMode() == 1) {
+        delay(PUSH_BUTTON_DEBOUNCE);
+        return;
+      }
       if(playing) {
         stopPlaying();
       }
@@ -396,12 +414,8 @@ void checkAlarmButton() {
  * Handler for the Alarm button
  */
 void checkPlayButton() {
-    // read the state of the pushbutton value:
-  int buttonState = digitalRead(PLAY_PIN);
-  if (buttonState == HIGH) {    
-    delay(PUSH_BUTTON_DEBOUNCE);
-    buttonState = digitalRead(PLAY_PIN);
-    if (buttonState == HIGH) {
+  if (digitalRead(PLAY_PIN)) {    
+    if (digitalRead(PLAY_PIN)) {
       enableDisplay(1);
       playNext();
     }
