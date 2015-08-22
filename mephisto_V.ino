@@ -413,9 +413,15 @@ void checkAlarmButton() {
 /**
  * Handler for the Alarm button
  */
-void checkPlayButton() {
+void checkPlayButton() {  
   if (digitalRead(PLAY_PIN)) {    
+    delay(PUSH_BUTTON_DEBOUNCE);
     if (digitalRead(PLAY_PIN)) {
+      if(resetSettingsMode() == 1) {
+        delay(PUSH_BUTTON_DEBOUNCE);
+        return;
+      }
+      
       enableDisplay(1);
       playNext();
     }
